@@ -32,30 +32,42 @@ const Round1 = () => {
           .limit(10);
 
         if (error) throw error;
-        setQuestions(data || []);
+        
+        if (!data || data.length === 0) {
+          throw new Error('No aptitude questions found. Please contact administrator.');
+        }
+        
+        setQuestions(data);
+        showToast('Round 1: Aptitude Test loaded', 'info');
       } catch (error: any) {
-        showToast(error.message, 'error');
+        console.error('Error fetching questions:', error);
+        showToast(error.message || 'Failed to load questions', 'error');
+        navigate('/dashboard');
       } finally {
         setLoading(false);
       }
     };
 
-    fetchQuestions();
-  }, []);
+    if (assessmentId) {
+      fetchQuestions();
+    }
+  }, [assessmentId, navigate, showToast]);
 
   // Timer effect
   useEffect(() => {
-    if (timeRemaining <= 0 && !showResults) {
+    if (timeRemaining <= 0 && !showResults && !submitting) {
       handleSubmitRound();
       return;
     }
 
-    const timer = setInterval(() => {
-      setTimeRemaining((prev) => prev - 1);
-    }, 1000);
+    if (!showResults) {
+      const timer = setInterval(() => {
+        setTimeRemaining((prev) => prev - 1);
+      }, 1000);
 
-    return () => clearInterval(timer);
-  }, [timeRemaining, showResults]);
+      return () => clearInterval(timer);
+    }
+  }, [timeRemaining, showResults, submitting]);
 
   const handleAnswerSelect = (questionId: string, answer: string) => {
     setSelectedAnswers((prev) => ({
@@ -81,6 +93,7 @@ const Round1 = () => {
     
     try {
       setSubmitting(true);
+      showToast('Submitting Round 1...', 'info');
 
       // Calculate results before saving
       const correctAnswers = questions.filter(q => selectedAnswers[q.id] === q.correct_answer).length;
@@ -118,7 +131,8 @@ const Round1 = () => {
       
       showToast('Round 1 completed successfully!', 'success');
     } catch (error: any) {
-      showToast(error.message, 'error');
+      console.error('Error submitting Round 1:', error);
+      showToast(error.message || 'Failed to submit Round 1', 'error');
       setSubmitting(false);
     }
   };
@@ -130,7 +144,29 @@ const Round1 = () => {
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-500" />
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-500 mx-auto mb-4" />
+          <p className="text-gray-600">Loading Round 1...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (questions.length === 0) {
+    return (
+      <div className="max-w-4xl mx-auto p-6">
+        <div className="bg-white rounded-lg shadow-md p-8 text-center">
+          <h1 className="text-2xl font-bold text-gray-900 mb-4">No Questions Available</h1>
+          <p className="text-gray-600 mb-6">
+            No aptitude questions are currently available. Please contact the administrator.
+          </p>
+          <Button
+            variant="primary"
+            onClick={() => navigate('/dashboard')}
+          >
+            Return to Dashboard
+          </Button>
+        </div>
       </div>
     );
   }
@@ -186,7 +222,10 @@ const Round1 = () => {
     <div className="max-w-4xl mx-auto p-6">
       <div className="bg-white rounded-lg shadow-md p-8">
         <div className="flex items-center justify-between mb-8">
-          <h1 className="text-2xl font-bold text-gray-900">Round 1: Aptitude</h1>
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">Round 1: Aptitude</h1>
+            <p className="text-gray-600">General aptitude and reasoning questions</p>
+          </div>
           <div className={`text-lg font-medium ${timeRemaining < 300 ? 'text-error-600' : 'text-primary-600'}`}>
             Time Remaining: {minutes}:{seconds.toString().padStart(2, '0')}
           </div>
