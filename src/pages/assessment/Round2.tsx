@@ -21,24 +21,68 @@ const Round2 = () => {
   const [selectedAnswers, setSelectedAnswers] = useState<Record<string, string>>({});
   const [codeSolutions, setCodeSolutions] = useState<Record<string, string>>({});
   const [timeRemaining, setTimeRemaining] = useState(ROUND_DURATION);
+  const [round1Verified, setRound1Verified] = useState(false);
+
+  // Debug: Add console logs for navigation debugging
+  useEffect(() => {
+    console.log('Round2 Component Mounted:', {
+      assessmentId,
+      currentSection,
+      round1Verified,
+      submitting
+    });
+  }, [assessmentId, currentSection, round1Verified, submitting]);
 
   useEffect(() => {
     const fetchAssessmentContent = async () => {
+      if (!assessmentId) {
+        console.error('Assessment ID is missing');
+        showToast('Assessment ID is required', 'error');
+        navigate('/dashboard');
+        return;
+      }
+
       try {
-        // Get the assessment to determine the domain
+        console.log('Fetching assessment content for:', assessmentId);
+        
+        // First verify that Round 1 is completed
         const { data: assessment, error: assessmentError } = await supabase
           .from('assessments')
-          .select('domain_id, domains(name)')
+          .select('round1_score, round2_score, status, domain_id, domains(name)')
           .eq('id', assessmentId)
           .single();
 
-        if (assessmentError) throw assessmentError;
+        if (assessmentError) {
+          console.error('Error fetching assessment:', assessmentError);
+          throw assessmentError;
+        }
+
+        console.log('Assessment data:', assessment);
+
+        // Check if Round 1 is completed
+        if (assessment.round1_score === null) {
+          console.log('Round 1 not completed, redirecting');
+          showToast('Please complete Round 1 first', 'warning');
+          navigate(`/assessment/${assessmentId}/round1`);
+          return;
+        }
+
+        // Check if Round 2 is already completed
+        if (assessment.round2_score !== null) {
+          console.log('Round 2 already completed, redirecting to results');
+          showToast('Round 2 already completed. Viewing results.', 'info');
+          navigate(`/assessment/${assessmentId}/results`);
+          return;
+        }
+
+        setRound1Verified(true);
 
         if (!assessment.domain_id) {
           throw new Error('Assessment domain not found');
         }
 
         // Fetch technical MCQs for the domain
+        console.log('Fetching technical questions for domain:', assessment.domain_id);
         const { data: mcqs, error: mcqsError } = await supabase
           .from('questions')
           .select('*')
@@ -46,17 +90,28 @@ const Round2 = () => {
           .eq('question_type', 'technical')
           .limit(5);
 
-        if (mcqsError) throw mcqsError;
+        if (mcqsError) {
+          console.error('Error fetching MCQs:', mcqsError);
+          throw mcqsError;
+        }
+        
+        console.log('MCQs loaded:', mcqs?.length || 0);
         setQuestions(mcqs || []);
 
         // Fetch coding problems for the domain
+        console.log('Fetching coding problems for domain:', assessment.domain_id);
         const { data: problems, error: problemsError } = await supabase
           .from('coding_problems')
           .select('*')
           .eq('domain_id', assessment.domain_id)
           .limit(2);
 
-        if (problemsError) throw problemsError;
+        if (problemsError) {
+          console.error('Error fetching coding problems:', problemsError);
+          throw problemsError;
+        }
+        
+        console.log('Coding problems loaded:', problems?.length || 0);
         setCodingProblems(problems || []);
 
         // Initialize code solutions with proper starter code
@@ -85,26 +140,37 @@ console.log(solution());`;
       }
     };
 
-    if (assessmentId) {
-      fetchAssessmentContent();
-    }
+    fetchAssessmentContent();
   }, [assessmentId, navigate, showToast]);
 
-  // Timer effect
+  // Timer effect with proper cleanup
   useEffect(() => {
-    if (timeRemaining <= 0 && !submitting) {
+    if (timeRemaining <= 0 && !submitting && round1Verified) {
+      console.log('Timer expired, auto-submitting Round 2');
       handleSubmitRound();
       return;
     }
 
-    const timer = setInterval(() => {
-      setTimeRemaining((prev) => prev - 1);
-    }, 1000);
+    if (round1Verified && !submitting) {
+      const timer = setInterval(() => {
+        setTimeRemaining((prev) => {
+          const newTime = prev - 1;
+          if (newTime <= 0) {
+            console.log('Round 2 timer reached zero');
+          }
+          return newTime;
+        });
+      }, 1000);
 
-    return () => clearInterval(timer);
-  }, [timeRemaining, submitting]);
+      return () => {
+        console.log('Cleaning up Round 2 timer');
+        clearInterval(timer);
+      };
+    }
+  }, [timeRemaining, submitting, round1Verified]);
 
   const handleAnswerSelect = (questionId: string, answer: string) => {
+    console.log('MCQ answer selected:', { questionId, answer });
     setSelectedAnswers((prev) => ({
       ...prev,
       [questionId]: answer,
@@ -112,6 +178,7 @@ console.log(solution());`;
   };
 
   const handleCodeChange = (problemId: string, value: string) => {
+    console.log('Code changed for problem:', problemId);
     setCodeSolutions((prev) => ({
       ...prev,
       [problemId]: value || '',
@@ -121,14 +188,19 @@ console.log(solution());`;
   const handleNextQuestion = () => {
     if (currentSection === 'mcq') {
       if (currentQuestionIndex < questions.length - 1) {
-        setCurrentQuestionIndex((prev) => prev + 1);
+        const newIndex = currentQuestionIndex + 1;
+        console.log('Moving to next MCQ:', newIndex);
+        setCurrentQuestionIndex(newIndex);
       } else if (codingProblems.length > 0) {
+        console.log('Switching to coding section');
         setCurrentSection('coding');
         setCurrentQuestionIndex(0);
       }
     } else {
       if (currentQuestionIndex < codingProblems.length - 1) {
-        setCurrentQuestionIndex((prev) => prev + 1);
+        const newIndex = currentQuestionIndex + 1;
+        console.log('Moving to next coding problem:', newIndex);
+        setCurrentQuestionIndex(newIndex);
       }
     }
   };
@@ -136,12 +208,17 @@ console.log(solution());`;
   const handlePreviousQuestion = () => {
     if (currentSection === 'mcq') {
       if (currentQuestionIndex > 0) {
-        setCurrentQuestionIndex((prev) => prev - 1);
+        const newIndex = currentQuestionIndex - 1;
+        console.log('Moving to previous MCQ:', newIndex);
+        setCurrentQuestionIndex(newIndex);
       }
     } else {
       if (currentQuestionIndex > 0) {
-        setCurrentQuestionIndex((prev) => prev - 1);
+        const newIndex = currentQuestionIndex - 1;
+        console.log('Moving to previous coding problem:', newIndex);
+        setCurrentQuestionIndex(newIndex);
       } else if (questions.length > 0) {
+        console.log('Switching back to MCQ section');
         setCurrentSection('mcq');
         setCurrentQuestionIndex(questions.length - 1);
       }
@@ -151,15 +228,25 @@ console.log(solution());`;
   const calculateScore = (mcqResponses: any[], codingSubmissions: any[]) => {
     const mcqMarks = mcqResponses.reduce((sum, response) => sum + response.marks_obtained, 0);
     const codingMarks = codingSubmissions.reduce((sum, submission) => sum + submission.marks_obtained, 0);
+    console.log('Score calculation:', { mcqMarks, codingMarks, total: mcqMarks + codingMarks });
     return mcqMarks + codingMarks;
   };
 
   const handleSubmitRound = async () => {
-    if (submitting) return;
+    if (submitting) {
+      console.log('Submit already in progress');
+      return;
+    }
     
     try {
+      console.log('Starting Round 2 submission');
       setSubmitting(true);
       showToast('Submitting Round 2...', 'info');
+
+      // Validate assessment ID
+      if (!assessmentId) {
+        throw new Error('Assessment ID is missing');
+      }
 
       // Save MCQ responses
       const mcqResponses = questions.map((question) => ({
@@ -170,12 +257,17 @@ console.log(solution());`;
         marks_obtained: selectedAnswers[question.id] === question.correct_answer ? question.marks : 0,
       }));
 
+      console.log('Saving MCQ responses:', mcqResponses.length);
+
       if (mcqResponses.length > 0) {
         const { error: responsesError } = await supabase
           .from('assessment_responses')
           .insert(mcqResponses);
 
-        if (responsesError) throw responsesError;
+        if (responsesError) {
+          console.error('Error saving MCQ responses:', responsesError);
+          throw responsesError;
+        }
       }
 
       // Save coding submissions with basic scoring
@@ -195,6 +287,15 @@ console.log(solution());`;
           marksObtained = Math.floor(problem.marks * 0.2); // Give 20% for any attempt
         }
 
+        console.log('Coding problem scoring:', {
+          problemId: problem.id,
+          hasContent,
+          hasFunction,
+          hasLogic,
+          marksObtained,
+          maxMarks: problem.marks
+        });
+
         return {
           assessment_id: assessmentId,
           problem_id: problem.id,
@@ -205,12 +306,17 @@ console.log(solution());`;
         };
       });
 
+      console.log('Saving coding submissions:', codingSubmissions.length);
+
       if (codingSubmissions.length > 0) {
         const { error: submissionsError } = await supabase
           .from('coding_submissions')
           .insert(codingSubmissions);
 
-        if (submissionsError) throw submissionsError;
+        if (submissionsError) {
+          console.error('Error saving coding submissions:', submissionsError);
+          throw submissionsError;
+        }
       }
 
       // Calculate Round 2 score
@@ -223,9 +329,18 @@ console.log(solution());`;
         .eq('id', assessmentId)
         .single();
 
-      if (fetchError) throw fetchError;
+      if (fetchError) {
+        console.error('Error fetching current assessment:', fetchError);
+        throw fetchError;
+      }
 
       const totalScore = (currentAssessment.round1_score || 0) + round2Score;
+
+      console.log('Final scores:', {
+        round1Score: currentAssessment.round1_score,
+        round2Score,
+        totalScore
+      });
 
       // Update assessment with Round 2 score and mark as completed
       const { error: updateError } = await supabase
@@ -238,12 +353,18 @@ console.log(solution());`;
         })
         .eq('id', assessmentId);
 
-      if (updateError) throw updateError;
+      if (updateError) {
+        console.error('Error updating assessment:', updateError);
+        throw updateError;
+      }
 
+      console.log('Round 2 completed successfully');
       showToast('Round 2 completed successfully!', 'success');
       
       // Navigate to results page
-      navigate(`/assessment/${assessmentId}/results`);
+      const resultsPath = `/assessment/${assessmentId}/results`;
+      console.log('Navigating to results:', resultsPath);
+      navigate(resultsPath);
     } catch (error: any) {
       console.error('Error submitting Round 2:', error);
       showToast(error.message || 'Failed to submit Round 2', 'error');
@@ -252,12 +373,45 @@ console.log(solution());`;
     }
   };
 
+  // Debug: Log current state
+  useEffect(() => {
+    console.log('Round2 State Update:', {
+      loading,
+      submitting,
+      round1Verified,
+      currentSection,
+      questionsCount: questions.length,
+      codingProblemsCount: codingProblems.length,
+      mcqAnswersCount: Object.keys(selectedAnswers).length,
+      codeSubmissionsCount: Object.keys(codeSolutions).length
+    });
+  }, [loading, submitting, round1Verified, currentSection, questions.length, codingProblems.length, selectedAnswers, codeSolutions]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-500 mx-auto mb-4" />
           <p className="text-gray-600">Loading Round 2...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!round1Verified) {
+    return (
+      <div className="max-w-4xl mx-auto p-6">
+        <div className="bg-white rounded-lg shadow-md p-8 text-center">
+          <h1 className="text-2xl font-bold text-gray-900 mb-4">Round 1 Required</h1>
+          <p className="text-gray-600 mb-6">
+            You must complete Round 1 before accessing Round 2.
+          </p>
+          <Button
+            variant="primary"
+            onClick={() => navigate(`/assessment/${assessmentId}/round1`)}
+          >
+            Go to Round 1
+          </Button>
         </div>
       </div>
     );
@@ -429,8 +583,9 @@ console.log(solution());`;
                 onClick={handleSubmitRound}
                 isLoading={submitting}
                 disabled={submitting}
+                className="min-w-[150px]"
               >
-                Submit Assessment
+                {submitting ? 'Submitting...' : 'Submit Assessment'}
               </Button>
             ) : (
               <Button
@@ -505,6 +660,23 @@ console.log(solution());`;
             )}
           </div>
         </div>
+
+        {/* Debug info in development */}
+        {process.env.NODE_ENV === 'development' && (
+          <div className="mt-8 pt-6 border-t border-gray-200">
+            <h3 className="text-sm font-medium text-gray-700 mb-3">Debug Info</h3>
+            <div className="bg-gray-100 rounded p-4 text-sm">
+              <pre>{JSON.stringify({
+                assessmentId,
+                round1Verified,
+                currentSection,
+                currentQuestionIndex,
+                totalQuestions,
+                submitting
+              }, null, 2)}</pre>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
