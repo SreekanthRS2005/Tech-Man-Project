@@ -27,7 +27,8 @@ export interface SummaryReport {
   completionRate: number;
 }
 
-const PASSING_THRESHOLD = 70;
+// Updated passing threshold to 40%
+const PASSING_THRESHOLD = 40;
 
 /**
  * Calculates the status for a round based on percentage
@@ -109,7 +110,7 @@ export function generateSummaryReport(
   const maxPossibleScore = rounds.reduce((sum, round) => sum + round.maxScore, 0);
   const completionRate = completedRounds >= 2 ? 100 : (completedRounds / 2) * 100;
   
-  // Determine overall status
+  // Determine overall status with 40% threshold
   let overallStatus: 'PASS' | 'FAIL' | 'INCOMPLETE' = 'INCOMPLETE';
   if (completedRounds >= 2) {
     const overallPercentage = maxPossibleScore > 0 ? (totalScore / maxPossibleScore) * 100 : 0;
@@ -136,7 +137,7 @@ export function formatSummaryReport(report: SummaryReport): string {
   const lines: string[] = [];
   
   lines.push('='.repeat(50));
-  lines.push('ASSESSMENT SUMMARY REPORT');
+  lines.push('CODING CHALLENGE ASSESSMENT REPORT');
   lines.push('='.repeat(50));
   lines.push('');
   
@@ -146,6 +147,7 @@ export function formatSummaryReport(report: SummaryReport): string {
   lines.push(`• Overall Accuracy: ${report.overallAccuracy}%`);
   lines.push(`• Total Score: ${report.totalScore}/${report.maxPossibleScore} points`);
   lines.push(`• Completion Rate: ${report.completionRate}%`);
+  lines.push(`• Pass Threshold: 40% (Updated for coding challenges)`);
   lines.push('');
   
   // Round Summary
@@ -170,6 +172,8 @@ export function formatSummaryReport(report: SummaryReport): string {
     lines.push('');
   });
   
+  lines.push('='.repeat(50));
+  lines.push('Note: Pass threshold updated to 40% for coding challenges');
   lines.push('='.repeat(50));
   
   return lines.join('\n');

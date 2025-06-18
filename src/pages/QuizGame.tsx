@@ -3,17 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import { Clock, CheckCircle, XCircle, Award, Target, TrendingUp, RotateCcw } from 'lucide-react';
 import Button from '../components/ui/Button';
 import { cn } from '../utils/cn';
-
-interface Question {
-  id: number;
-  question: string;
-  options: string[];
-  correctAnswer: string;
-  round: number;
-}
+import { getRandomQuestions, CodingQuestion } from '../utils/codingQuestions';
 
 interface Answer {
-  questionId: number;
+  questionId: string;
   selectedAnswer: string;
   isCorrect: boolean;
   round: number;
@@ -37,81 +30,6 @@ interface GameResults {
   performanceRating: string;
 }
 
-const QUIZ_QUESTIONS: Question[] = [
-  // Round 1 Questions
-  {
-    id: 1,
-    question: "What is the capital of France?",
-    options: ["London", "Berlin", "Paris", "Madrid"],
-    correctAnswer: "Paris",
-    round: 1
-  },
-  {
-    id: 2,
-    question: "Which planet is known as the Red Planet?",
-    options: ["Venus", "Mars", "Jupiter", "Saturn"],
-    correctAnswer: "Mars",
-    round: 1
-  },
-  {
-    id: 3,
-    question: "What is 15 × 8?",
-    options: ["110", "120", "130", "140"],
-    correctAnswer: "120",
-    round: 1
-  },
-  {
-    id: 4,
-    question: "Who painted the Mona Lisa?",
-    options: ["Vincent van Gogh", "Pablo Picasso", "Leonardo da Vinci", "Michelangelo"],
-    correctAnswer: "Leonardo da Vinci",
-    round: 1
-  },
-  {
-    id: 5,
-    question: "What is the largest ocean on Earth?",
-    options: ["Atlantic Ocean", "Indian Ocean", "Arctic Ocean", "Pacific Ocean"],
-    correctAnswer: "Pacific Ocean",
-    round: 1
-  },
-  // Round 2 Questions
-  {
-    id: 6,
-    question: "What is the chemical symbol for gold?",
-    options: ["Go", "Gd", "Au", "Ag"],
-    correctAnswer: "Au",
-    round: 2
-  },
-  {
-    id: 7,
-    question: "In which year did World War II end?",
-    options: ["1944", "1945", "1946", "1947"],
-    correctAnswer: "1945",
-    round: 2
-  },
-  {
-    id: 8,
-    question: "What is the square root of 144?",
-    options: ["10", "11", "12", "13"],
-    correctAnswer: "12",
-    round: 2
-  },
-  {
-    id: 9,
-    question: "Which programming language is known for web development?",
-    options: ["Python", "JavaScript", "C++", "Java"],
-    correctAnswer: "JavaScript",
-    round: 2
-  },
-  {
-    id: 10,
-    question: "What is the smallest prime number?",
-    options: ["0", "1", "2", "3"],
-    correctAnswer: "2",
-    round: 2
-  }
-];
-
 const QuizGame = () => {
   const navigate = useNavigate();
   const [currentRound, setCurrentRound] = useState<1 | 2>(1);
@@ -121,8 +39,29 @@ const QuizGame = () => {
   const [gamePhase, setGamePhase] = useState<'playing' | 'round-transition' | 'results'>('playing');
   const [timeRemaining, setTimeRemaining] = useState(30); // 30 seconds per question
   const [gameResults, setGameResults] = useState<GameResults | null>(null);
+  const [round1Questions, setRound1Questions] = useState<CodingQuestion[]>([]);
+  const [round2Questions, setRound2Questions] = useState<CodingQuestion[]>([]);
+  const [usedQuestionIds, setUsedQuestionIds] = useState<string[]>([]);
 
-  const currentQuestions = QUIZ_QUESTIONS.filter(q => q.round === currentRound);
+  // Initialize questions when component mounts
+  useEffect(() => {
+    const initializeQuestions = () => {
+      // Get 5 easy questions for Round 1
+      const r1Questions = getRandomQuestions(5, 'easy', usedQuestionIds);
+      setRound1Questions(r1Questions);
+      
+      // Get 5 medium questions for Round 2, excluding Round 1 questions
+      const r2Questions = getRandomQuestions(5, 'medium', [...usedQuestionIds, ...r1Questions.map(q => q.id)]);
+      setRound2Questions(r2Questions);
+      
+      // Track all used questions
+      setUsedQuestionIds([...r1Questions.map(q => q.id), ...r2Questions.map(q => q.id)]);
+    };
+
+    initializeQuestions();
+  }, []);
+
+  const currentQuestions = currentRound === 1 ? round1Questions : round2Questions;
   const currentQuestion = currentQuestions[currentQuestionIndex];
 
   // Timer effect
@@ -147,11 +86,17 @@ const QuizGame = () => {
   };
 
   const handleNextQuestion = () => {
+    if (!currentQuestion) return;
+
+    // For quiz game, we'll create simple MCQ options from the coding questions
+    const options = generateMCQOptions(currentQuestion);
+    const correctAnswer = options[0]; // First option is always correct for simplicity
+    
     // Record the answer
     const newAnswer: Answer = {
       questionId: currentQuestion.id,
       selectedAnswer: selectedAnswer || '',
-      isCorrect: selectedAnswer === currentQuestion.correctAnswer,
+      isCorrect: selectedAnswer === correctAnswer,
       round: currentRound
     };
 
@@ -180,6 +125,23 @@ const QuizGame = () => {
     }
   };
 
+  // Generate MCQ options from coding questions
+  const generateMCQOptions = (question: CodingQuestion): string[] => {
+    // Create simplified MCQ options based on the coding question
+    switch (question.category) {
+      case 'Basic Math':
+        return ['Correct mathematical operation', 'Incorrect formula', 'Wrong operator', 'Invalid syntax'];
+      case 'String Manipulation':
+        return ['Proper string method', 'Wrong string function', 'Incorrect approach', 'Invalid operation'];
+      case 'Arrays':
+        return ['Correct array method', 'Wrong array function', 'Invalid index', 'Incorrect iteration'];
+      case 'Basic Logic':
+        return ['Proper conditional logic', 'Wrong comparison', 'Invalid operator', 'Incorrect structure'];
+      default:
+        return [question.outputExample, 'Wrong answer 1', 'Wrong answer 2', 'Wrong answer 3'];
+    }
+  };
+
   const calculateResults = (finalAnswers: Answer[]) => {
     const round1Answers = finalAnswers.filter(a => a.round === 1);
     const round2Answers = finalAnswers.filter(a => a.round === 2);
@@ -205,10 +167,11 @@ const QuizGame = () => {
     const totalScore = round1Result.score + round2Result.score;
     const overallPercentage = (totalScore / 10) * 100;
 
+    // Updated performance rating with 40% threshold
     let performanceRating = '';
-    if (overallPercentage >= 90) performanceRating = 'Excellent';
-    else if (overallPercentage >= 70) performanceRating = 'Good';
-    else if (overallPercentage >= 50) performanceRating = 'Average';
+    if (overallPercentage >= 80) performanceRating = 'Excellent';
+    else if (overallPercentage >= 60) performanceRating = 'Good';
+    else if (overallPercentage >= 40) performanceRating = 'Pass'; // Updated threshold
     else performanceRating = 'Need Improvement';
 
     const results: GameResults = {
@@ -228,7 +191,7 @@ const QuizGame = () => {
     switch (rating) {
       case 'Excellent': return 'text-success-600';
       case 'Good': return 'text-primary-600';
-      case 'Average': return 'text-warning-600';
+      case 'Pass': return 'text-warning-600'; // Updated for 40% threshold
       case 'Need Improvement': return 'text-error-600';
       default: return 'text-gray-600';
     }
@@ -238,19 +201,28 @@ const QuizGame = () => {
     switch (rating) {
       case 'Excellent': return 'bg-success-50 border-success-200';
       case 'Good': return 'bg-primary-50 border-primary-200';
-      case 'Average': return 'bg-warning-50 border-warning-200';
+      case 'Pass': return 'bg-warning-50 border-warning-200'; // Updated for 40% threshold
       case 'Need Improvement': return 'bg-error-50 border-error-200';
       default: return 'bg-gray-50 border-gray-200';
     }
   };
 
   const restartGame = () => {
+    // Reset all state
     setCurrentRound(1);
     setCurrentQuestionIndex(0);
     setAnswers([]);
     setSelectedAnswer('');
     setGamePhase('playing');
     setGameResults(null);
+    
+    // Get new random questions
+    const newR1Questions = getRandomQuestions(5, 'easy', usedQuestionIds);
+    const newR2Questions = getRandomQuestions(5, 'medium', [...usedQuestionIds, ...newR1Questions.map(q => q.id)]);
+    
+    setRound1Questions(newR1Questions);
+    setRound2Questions(newR2Questions);
+    setUsedQuestionIds(prev => [...prev, ...newR1Questions.map(q => q.id), ...newR2Questions.map(q => q.id)]);
   };
 
   if (gamePhase === 'round-transition') {
@@ -261,6 +233,7 @@ const QuizGame = () => {
             <CheckCircle className="h-16 w-16 text-success-500 mx-auto mb-4" />
             <h2 className="text-2xl font-bold text-gray-900 mb-2">Round 1 Complete!</h2>
             <p className="text-gray-600">Get ready for Round 2...</p>
+            <p className="text-sm text-primary-600 mt-2">Pass threshold: 40%</p>
           </div>
           <div className="animate-pulse">
             <div className="h-2 bg-primary-200 rounded-full overflow-hidden">
@@ -282,6 +255,7 @@ const QuizGame = () => {
               <Award className="h-16 w-16 text-warning-500 mx-auto mb-4" />
               <h1 className="text-3xl font-bold text-gray-900 mb-2">Quiz Complete!</h1>
               <p className="text-gray-600">Here's your detailed performance analysis</p>
+              <p className="text-sm text-primary-600 mt-2">Updated pass threshold: 40%</p>
             </div>
           </div>
 
@@ -322,7 +296,7 @@ const QuizGame = () => {
             <div className="bg-white rounded-lg shadow-xl p-6">
               <h3 className="text-xl font-bold text-gray-900 mb-4 flex items-center">
                 <span className="bg-primary-100 text-primary-700 rounded-full w-8 h-8 flex items-center justify-center text-sm font-bold mr-3">1</span>
-                Round 1 Results
+                Round 1 Results (Easy)
               </h3>
               <div className="space-y-4">
                 <div className="flex justify-between items-center">
@@ -346,7 +320,7 @@ const QuizGame = () => {
             <div className="bg-white rounded-lg shadow-xl p-6">
               <h3 className="text-xl font-bold text-gray-900 mb-4 flex items-center">
                 <span className="bg-secondary-100 text-secondary-700 rounded-full w-8 h-8 flex items-center justify-center text-sm font-bold mr-3">2</span>
-                Round 2 Results
+                Round 2 Results (Medium)
               </h3>
               <div className="space-y-4">
                 <div className="flex justify-between items-center">
@@ -367,70 +341,57 @@ const QuizGame = () => {
             </div>
           </div>
 
-          {/* Detailed Question Analysis */}
+          {/* Performance Summary */}
           <div className="bg-white rounded-lg shadow-xl p-6 mb-6">
-            <h3 className="text-xl font-bold text-gray-900 mb-6">Question Analysis</h3>
-            
-            {[1, 2].map(roundNum => {
-              const roundResult = roundNum === 1 ? gameResults.round1 : gameResults.round2;
-              const roundQuestions = QUIZ_QUESTIONS.filter(q => q.round === roundNum);
-              
-              return (
-                <div key={roundNum} className="mb-8">
-                  <h4 className="text-lg font-semibold text-gray-900 mb-4">Round {roundNum}</h4>
-                  <div className="space-y-3">
-                    {roundQuestions.map((question, index) => {
-                      const userAnswer = answers.find(a => a.questionId === question.id);
-                      const isCorrect = userAnswer?.isCorrect || false;
-                      
-                      return (
-                        <div 
-                          key={question.id}
-                          className={`p-4 rounded-lg border-2 ${
-                            isCorrect 
-                              ? 'bg-success-50 border-success-200' 
-                              : 'bg-error-50 border-error-200'
-                          }`}
-                        >
-                          <div className="flex items-start justify-between">
-                            <div className="flex-1">
-                              <div className="flex items-center mb-2">
-                                {isCorrect ? (
-                                  <CheckCircle className="h-5 w-5 text-success-500 mr-2" />
-                                ) : (
-                                  <XCircle className="h-5 w-5 text-error-500 mr-2" />
-                                )}
-                                <span className="font-medium text-gray-900">
-                                  Question {index + 1}
-                                </span>
-                              </div>
-                              <p className="text-gray-700 mb-2">{question.question}</p>
-                              <div className="text-sm">
-                                <p className="text-gray-600">
-                                  <span className="font-medium">Your answer:</span> {userAnswer?.selectedAnswer || 'No answer'}
-                                </p>
-                                {!isCorrect && (
-                                  <p className="text-gray-600">
-                                    <span className="font-medium">Correct answer:</span> {question.correctAnswer}
-                                  </p>
-                                )}
-                              </div>
-                            </div>
-                            <div className={`px-3 py-1 rounded-full text-sm font-medium ${
-                              isCorrect 
-                                ? 'bg-success-100 text-success-800' 
-                                : 'bg-error-100 text-error-800'
-                            }`}>
-                              {isCorrect ? 'Correct' : 'Incorrect'}
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })}
+            <h3 className="text-xl font-bold text-gray-900 mb-6">Performance Summary</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <h4 className="font-semibold text-gray-900 mb-3">Strengths:</h4>
+                <ul className="space-y-2 text-sm text-gray-700">
+                  {gameResults.round1.percentage >= 60 && (
+                    <li className="flex items-center">
+                      <CheckCircle className="h-4 w-4 text-success-500 mr-2" />
+                      Strong performance in basic concepts
+                    </li>
+                  )}
+                  {gameResults.round2.percentage >= 60 && (
+                    <li className="flex items-center">
+                      <CheckCircle className="h-4 w-4 text-success-500 mr-2" />
+                      Good grasp of intermediate topics
+                    </li>
+                  )}
+                  {gameResults.overallPercentage >= 40 && (
+                    <li className="flex items-center">
+                      <CheckCircle className="h-4 w-4 text-success-500 mr-2" />
+                      Achieved passing threshold (40%)
+                    </li>
+                  )}
+                </ul>
+              </div>
+              <div>
+                <h4 className="font-semibold text-gray-900 mb-3">Areas for Improvement:</h4>
+                <ul className="space-y-2 text-sm text-gray-700">
+                  {gameResults.round1.percentage < 60 && (
+                    <li className="flex items-center">
+                      <XCircle className="h-4 w-4 text-error-500 mr-2" />
+                      Review fundamental concepts
+                    </li>
+                  )}
+                  {gameResults.round2.percentage < 60 && (
+                    <li className="flex items-center">
+                      <XCircle className="h-4 w-4 text-error-500 mr-2" />
+                      Practice intermediate problems
+                    </li>
+                  )}
+                  {gameResults.overallPercentage < 40 && (
+                    <li className="flex items-center">
+                      <XCircle className="h-4 w-4 text-error-500 mr-2" />
+                      Focus on core programming concepts
+                    </li>
+                  )}
+                </ul>
+              </div>
+            </div>
           </div>
 
           {/* Action Buttons */}
@@ -457,6 +418,19 @@ const QuizGame = () => {
   }
 
   // Playing phase
+  if (!currentQuestion) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-primary-50 to-secondary-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-500 mx-auto mb-4" />
+          <p className="text-gray-600">Loading questions...</p>
+        </div>
+      </div>
+    );
+  }
+
+  const options = generateMCQOptions(currentQuestion);
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary-50 to-secondary-50 p-6">
       <div className="max-w-4xl mx-auto">
@@ -464,8 +438,9 @@ const QuizGame = () => {
         <div className="bg-white rounded-lg shadow-xl p-6 mb-6">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">Quiz Game</h1>
-              <p className="text-gray-600">Round {currentRound} of 2</p>
+              <h1 className="text-2xl font-bold text-gray-900">Coding Quiz Game</h1>
+              <p className="text-gray-600">Round {currentRound} of 2 • {currentRound === 1 ? 'Easy' : 'Medium'} Level</p>
+              <p className="text-sm text-primary-600">Pass threshold: 40%</p>
             </div>
             <div className="flex items-center space-x-4">
               <div className={`flex items-center px-4 py-2 rounded-lg ${
@@ -493,12 +468,32 @@ const QuizGame = () => {
 
         {/* Question */}
         <div className="bg-white rounded-lg shadow-xl p-8">
-          <h2 className="text-xl font-bold text-gray-900 mb-6">
-            {currentQuestion.question}
-          </h2>
+          <div className="mb-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold text-gray-900">
+                {currentQuestion.title}
+              </h2>
+              <span className={`px-3 py-1 rounded-full text-sm font-medium ${
+                currentQuestion.difficulty === 'easy' ? 'bg-success-100 text-success-800' :
+                currentQuestion.difficulty === 'medium' ? 'bg-warning-100 text-warning-800' :
+                'bg-error-100 text-error-800'
+              }`}>
+                {currentQuestion.difficulty.toUpperCase()}
+              </span>
+            </div>
+            <p className="text-gray-600 mb-4">{currentQuestion.description}</p>
+            <div className="bg-gray-50 rounded-lg p-4 mb-6">
+              <p className="text-sm text-gray-700">
+                <strong>Category:</strong> {currentQuestion.category}
+              </p>
+              <p className="text-sm text-gray-700 mt-1">
+                <strong>Example:</strong> {currentQuestion.inputExample} → {currentQuestion.outputExample}
+              </p>
+            </div>
+          </div>
           
           <div className="space-y-3 mb-8">
-            {currentQuestion.options.map((option, index) => (
+            {options.map((option, index) => (
               <button
                 key={index}
                 onClick={() => handleAnswerSelect(option)}

@@ -296,6 +296,12 @@ const Round1 = () => {
         <div className="mb-6">
           <h1 className="text-3xl font-bold text-gray-900 mb-2">Round 1 Complete!</h1>
           <p className="text-gray-600">Here are your aptitude test results</p>
+          <div className="mt-4 p-4 bg-primary-50 border border-primary-200 rounded-lg">
+            <p className="text-sm text-primary-700">
+              <strong>Note:</strong> Pass threshold is now 40% for coding challenges. 
+              Your performance will be evaluated based on this updated criteria.
+            </p>
+          </div>
         </div>
         
         <TestResultsDisplay 
@@ -358,6 +364,7 @@ const Round1 = () => {
           <div>
             <h1 className="text-2xl font-bold text-gray-900">Round 1: Aptitude</h1>
             <p className="text-gray-600">General aptitude and reasoning questions</p>
+            <p className="text-sm text-primary-600 mt-1">Pass threshold: 40% (Updated for coding challenges)</p>
           </div>
           <div className={`text-lg font-medium ${timeRemaining < 300 ? 'text-error-600' : 'text-primary-600'}`}>
             Time Remaining: {minutes}:{seconds.toString().padStart(2, '0')}

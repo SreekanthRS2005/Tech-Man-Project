@@ -53,22 +53,23 @@ const PasswordInput = forwardRef<HTMLInputElement, PasswordInputProps>(
     
     return (
       <div className="space-y-1">
-        <Input
-          ref={ref}
-          type={showPassword ? 'text' : 'password'}
-          icon={
-            <button
-              type="button"
-              onClick={togglePasswordVisibility}
-              className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-500 hover:text-gray-700 focus:outline-none"
-            >
-              {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-            </button>
-          }
-          iconPosition="right"
-          value={value}
-          {...props}
-        />
+        <div className="relative">
+          <Input
+            ref={ref}
+            type={showPassword ? 'text' : 'password'}
+            value={value}
+            {...props}
+          />
+          <button
+            type="button"
+            onClick={togglePasswordVisibility}
+            className="absolute inset-y-0 right-0 flex items-center pr-3 text-gray-500 hover:text-gray-700 focus:outline-none transition-colors"
+            tabIndex={-1}
+            aria-label={showPassword ? 'Hide password' : 'Show password'}
+          >
+            {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+          </button>
+        </div>
         
         {showStrengthMeter && value && (
           <div className="mt-2">

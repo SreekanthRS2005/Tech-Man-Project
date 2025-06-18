@@ -5,6 +5,8 @@ import supabase from '../../lib/supabase';
 import Button from '../../components/ui/Button';
 import Editor from '@monaco-editor/react';
 import { Question, CodingProblem } from '../../types/assessment';
+import { getRandomQuestions, validateSolution, CodingQuestion } from '../../utils/codingQuestions';
+import { analyzeCodeSubmission } from '../../utils/testCalculations';
 
 const ROUND_DURATION = 45 * 60; // 45 minutes in seconds
 
@@ -15,13 +17,15 @@ const Round2 = () => {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [questions, setQuestions] = useState<Question[]>([]);
-  const [codingProblems, setCodingProblems] = useState<CodingProblem[]>([]);
+  const [codingProblems, setCodingProblems] = useState<CodingQuestion[]>([]);
   const [currentSection, setCurrentSection] = useState<'mcq' | 'coding'>('mcq');
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [selectedAnswers, setSelectedAnswers] = useState<Record<string, string>>({});
   const [codeSolutions, setCodeSolutions] = useState<Record<string, string>>({});
+  const [codeAnalysis, setCodeAnalysis] = useState<Record<string, any>>({});
   const [timeRemaining, setTimeRemaining] = useState(ROUND_DURATION);
   const [round1Verified, setRound1Verified] = useState(false);
+  const [usedQuestionIds, setUsedQuestionIds] = useState<string[]>([]);
 
   // Debug: Add console logs for navigation debugging
   useEffect(() => {
@@ -98,31 +102,26 @@ const Round2 = () => {
         console.log('MCQs loaded:', mcqs?.length || 0);
         setQuestions(mcqs || []);
 
-        // Fetch coding problems for the domain
-        console.log('Fetching coding problems for domain:', assessment.domain_id);
-        const { data: problems, error: problemsError } = await supabase
-          .from('coding_problems')
-          .select('*')
-          .eq('domain_id', assessment.domain_id)
-          .limit(2);
-
-        if (problemsError) {
-          console.error('Error fetching coding problems:', problemsError);
-          throw problemsError;
-        }
+        // Get random coding questions from the pool (no database dependency)
+        const randomCodingQuestions = getRandomQuestions(2, 'medium', usedQuestionIds);
+        console.log('Random coding questions loaded:', randomCodingQuestions.length);
+        setCodingProblems(randomCodingQuestions);
         
-        console.log('Coding problems loaded:', problems?.length || 0);
-        setCodingProblems(problems || []);
+        // Track used questions to avoid repeats
+        setUsedQuestionIds(prev => [...prev, ...randomCodingQuestions.map(q => q.id)]);
 
         // Initialize code solutions with proper starter code
         const initialSolutions: Record<string, string> = {};
-        problems?.forEach((problem) => {
+        randomCodingQuestions.forEach((problem) => {
           initialSolutions[problem.id] = `// ${problem.title}
 // ${problem.description}
 
 function solution() {
     // Write your solution here
+    // Input: ${problem.inputExample}
+    // Expected Output: ${problem.outputExample}
     
+    return null; // Replace with your solution
 }
 
 // Test your solution
@@ -183,6 +182,36 @@ console.log(solution());`;
       ...prev,
       [problemId]: value || '',
     }));
+  };
+
+  const analyzeCode = (problemId: string) => {
+    const code = codeSolutions[problemId];
+    const problem = codingProblems.find(p => p.id === problemId);
+    
+    if (!code || !problem) return;
+
+    // Analyze the code submission
+    const analysis = analyzeCodeSubmission(code, 'javascript');
+    
+    // Validate against test cases
+    const validation = validateSolution(problem, code, 'javascript');
+    
+    const combinedAnalysis = {
+      ...analysis,
+      ...validation,
+      timestamp: new Date().toISOString()
+    };
+
+    setCodeAnalysis(prev => ({
+      ...prev,
+      [problemId]: combinedAnalysis
+    }));
+
+    // Show feedback to user
+    showToast(
+      `Code analyzed! Score: ${validation.score}/${problem.points} points`,
+      validation.passed ? 'success' : 'warning'
+    );
   };
 
   const handleNextQuestion = () => {
@@ -270,48 +299,60 @@ console.log(solution());`;
         }
       }
 
-      // Save coding submissions with basic scoring
+      // Save coding submissions with enhanced scoring
       const codingSubmissions = codingProblems.map((problem) => {
         const solution = codeSolutions[problem.id] || '';
-        // Basic scoring: give partial marks if solution is not empty and has some logic
-        const hasContent = solution.trim().length > 50; // More than just comments
-        const hasFunction = solution.includes('function') || solution.includes('=>');
-        const hasLogic = solution.includes('return') || solution.includes('console.log');
+        const analysis = codeAnalysis[problem.id];
         
+        // Calculate marks based on analysis
         let marksObtained = 0;
-        if (hasContent && hasFunction && hasLogic) {
-          marksObtained = Math.floor(problem.marks * 0.7); // Give 70% for a reasonable attempt
-        } else if (hasContent && (hasFunction || hasLogic)) {
-          marksObtained = Math.floor(problem.marks * 0.4); // Give 40% for partial attempt
-        } else if (hasContent) {
-          marksObtained = Math.floor(problem.marks * 0.2); // Give 20% for any attempt
+        if (analysis) {
+          marksObtained = analysis.score || 0;
+        } else {
+          // Fallback scoring if no analysis
+          const hasContent = solution.trim().length > 50;
+          const hasFunction = solution.includes('function') || solution.includes('=>');
+          const hasLogic = solution.includes('return') || solution.includes('console.log');
+          
+          if (hasContent && hasFunction && hasLogic) {
+            marksObtained = Math.floor(problem.points * 0.7);
+          } else if (hasContent && (hasFunction || hasLogic)) {
+            marksObtained = Math.floor(problem.points * 0.4);
+          } else if (hasContent) {
+            marksObtained = Math.floor(problem.points * 0.2);
+          }
         }
 
         console.log('Coding problem scoring:', {
           problemId: problem.id,
-          hasContent,
-          hasFunction,
-          hasLogic,
           marksObtained,
-          maxMarks: problem.marks
+          maxMarks: problem.points,
+          hasAnalysis: !!analysis
         });
 
         return {
           assessment_id: assessmentId,
-          problem_id: problem.id,
+          problem_id: problem.id, // This will be null since we're using dynamic questions
           code_solution: solution,
           language: 'javascript',
-          test_results: [{ passed: hasContent && hasFunction && hasLogic, output: 'Basic validation passed' }],
+          test_results: analysis?.testResults || [{ passed: marksObtained > 0, output: 'Code analysis completed' }],
           marks_obtained: marksObtained,
         };
       });
 
       console.log('Saving coding submissions:', codingSubmissions.length);
 
-      if (codingSubmissions.length > 0) {
+      // For dynamic coding problems, we'll save them differently since they don't exist in the database
+      // We'll store the results in a way that doesn't require foreign key constraints
+      const modifiedSubmissions = codingSubmissions.map(sub => ({
+        ...sub,
+        problem_id: null, // Set to null since these are dynamic questions
+      }));
+
+      if (modifiedSubmissions.length > 0) {
         const { error: submissionsError } = await supabase
           .from('coding_submissions')
-          .insert(codingSubmissions);
+          .insert(modifiedSubmissions);
 
         if (submissionsError) {
           console.error('Error saving coding submissions:', submissionsError);
@@ -518,39 +559,121 @@ console.log(solution());`;
           // Coding Section
           <div className="mb-8">
             <div className="mb-6">
-              <h2 className="text-lg font-medium text-gray-900 mb-2">
-                {codingProblems[currentQuestionIndex].title}
-              </h2>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-medium text-gray-900">
+                  {codingProblems[currentQuestionIndex].title}
+                </h2>
+                <div className="flex items-center space-x-2">
+                  <span className={`px-2 py-1 rounded text-xs font-medium ${
+                    codingProblems[currentQuestionIndex].difficulty === 'easy' ? 'bg-success-100 text-success-800' :
+                    codingProblems[currentQuestionIndex].difficulty === 'medium' ? 'bg-warning-100 text-warning-800' :
+                    'bg-error-100 text-error-800'
+                  }`}>
+                    {codingProblems[currentQuestionIndex].difficulty.toUpperCase()}
+                  </span>
+                  <span className="text-sm text-gray-600">
+                    {codingProblems[currentQuestionIndex].points} points
+                  </span>
+                </div>
+              </div>
+
               <div className="prose max-w-none mb-4">
                 <p className="text-gray-600 whitespace-pre-wrap">
                   {codingProblems[currentQuestionIndex].description}
                 </p>
               </div>
 
-              <div className="bg-gray-50 rounded-lg p-4 mb-4">
-                <h3 className="text-sm font-medium text-gray-900 mb-2">Test Cases:</h3>
-                <pre className="text-sm text-gray-600 whitespace-pre-wrap">
-                  {JSON.stringify(codingProblems[currentQuestionIndex].test_cases, null, 2)}
-                </pre>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <h3 className="text-sm font-medium text-gray-900 mb-2">Example Input:</h3>
+                  <code className="text-sm text-gray-600">
+                    {codingProblems[currentQuestionIndex].inputExample}
+                  </code>
+                </div>
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <h3 className="text-sm font-medium text-gray-900 mb-2">Expected Output:</h3>
+                  <code className="text-sm text-gray-600">
+                    {codingProblems[currentQuestionIndex].outputExample}
+                  </code>
+                </div>
               </div>
 
-              <div className="border border-gray-300 rounded-lg overflow-hidden">
-                <Editor
-                  height="400px"
-                  defaultLanguage="javascript"
-                  value={codeSolutions[codingProblems[currentQuestionIndex].id]}
-                  onChange={(value) => handleCodeChange(codingProblems[currentQuestionIndex].id, value || '')}
-                  theme="vs-dark"
-                  options={{
-                    minimap: { enabled: false },
-                    fontSize: 14,
-                    lineNumbers: 'on',
-                    automaticLayout: true,
-                    wordWrap: 'on',
-                    scrollBeyondLastLine: false,
-                  }}
-                />
+              <div className="bg-gray-50 rounded-lg p-4 mb-4">
+                <h3 className="text-sm font-medium text-gray-900 mb-2">Test Cases:</h3>
+                <div className="space-y-2">
+                  {codingProblems[currentQuestionIndex].testCases
+                    .filter(tc => !tc.hidden)
+                    .map((testCase, index) => (
+                    <div key={index} className="text-sm">
+                      <span className="text-gray-600">
+                        Input: <code>{testCase.input}</code> → 
+                        Output: <code>{testCase.expectedOutput}</code>
+                      </span>
+                    </div>
+                  ))}
+                  <p className="text-xs text-gray-500 mt-2">
+                    Note: Additional hidden test cases will be used for evaluation
+                  </p>
+                </div>
               </div>
+
+              <div className="mb-4">
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-sm font-medium text-gray-900">Your Solution:</h3>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => analyzeCode(codingProblems[currentQuestionIndex].id)}
+                    disabled={!codeSolutions[codingProblems[currentQuestionIndex].id]?.trim()}
+                  >
+                    Analyze Code
+                  </Button>
+                </div>
+                <div className="border border-gray-300 rounded-lg overflow-hidden">
+                  <Editor
+                    height="400px"
+                    defaultLanguage="javascript"
+                    value={codeSolutions[codingProblems[currentQuestionIndex].id]}
+                    onChange={(value) => handleCodeChange(codingProblems[currentQuestionIndex].id, value || '')}
+                    theme="vs-dark"
+                    options={{
+                      minimap: { enabled: false },
+                      fontSize: 14,
+                      lineNumbers: 'on',
+                      automaticLayout: true,
+                      wordWrap: 'on',
+                      scrollBeyondLastLine: false,
+                    }}
+                  />
+                </div>
+              </div>
+
+              {/* Code Analysis Feedback */}
+              {codeAnalysis[codingProblems[currentQuestionIndex].id] && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+                  <h3 className="text-sm font-medium text-blue-900 mb-2">Code Analysis:</h3>
+                  <div className="space-y-2">
+                    {codeAnalysis[codingProblems[currentQuestionIndex].id].feedback?.map((feedback: string, index: number) => (
+                      <p key={index} className="text-sm text-blue-800">{feedback}</p>
+                    ))}
+                  </div>
+                  <div className="mt-2 text-sm text-blue-700">
+                    Score: {codeAnalysis[codingProblems[currentQuestionIndex].id].score || 0}/{codingProblems[currentQuestionIndex].points} points
+                  </div>
+                </div>
+              )}
+
+              {/* Hints */}
+              {codingProblems[currentQuestionIndex].hints.length > 0 && (
+                <div className="bg-warning-50 border border-warning-200 rounded-lg p-4">
+                  <h3 className="text-sm font-medium text-warning-900 mb-2">💡 Hints:</h3>
+                  <ul className="space-y-1">
+                    {codingProblems[currentQuestionIndex].hints.map((hint, index) => (
+                      <li key={index} className="text-sm text-warning-800">• {hint}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
           </div>
         ) : null}
@@ -672,7 +795,8 @@ console.log(solution());`;
                 currentSection,
                 currentQuestionIndex,
                 totalQuestions,
-                submitting
+                submitting,
+                codeAnalysisCount: Object.keys(codeAnalysis).length
               }, null, 2)}</pre>
             </div>
           </div>

@@ -3,8 +3,8 @@
  * Handles score calculation, validation, and formatting for assessment results
  */
 
-// Constants
-export const PASSING_THRESHOLD = 70;
+// Constants - Updated pass threshold to 40%
+export const PASSING_THRESHOLD = 40;
 export const MAX_PERCENTAGE = 100;
 export const MIN_PERCENTAGE = 0;
 
@@ -112,7 +112,7 @@ export function calculatePercentage(earnedPoints: number, totalPoints: number): 
 }
 
 /**
- * Determines pass/fail status based on percentage
+ * Determines pass/fail status based on percentage (40% threshold)
  * @param percentage - The calculated percentage score
  * @returns 'PASS' or 'FAIL' status
  */
@@ -309,4 +309,98 @@ export function quickCalculateResults(
 
   const results = calculateTestResults({ questions });
   return formatTestResults(results);
+}
+
+/**
+ * Analyzes code submission and provides feedback
+ * @param code - User submitted code
+ * @param language - Programming language
+ * @param expectedOutput - Expected output for the problem
+ * @returns Analysis result with feedback
+ */
+export function analyzeCodeSubmission(code: string, language: string, expectedOutput?: string) {
+  const feedback: string[] = [];
+  let hasErrors = false;
+  let score = 0;
+
+  // Basic syntax checks
+  if (!code || code.trim().length === 0) {
+    feedback.push("❌ No code submitted. Please write your solution.");
+    hasErrors = true;
+    return { score: 0, feedback, hasErrors };
+  }
+
+  // Language-specific analysis
+  switch (language.toLowerCase()) {
+    case 'javascript':
+      if (!code.includes('function') && !code.includes('=>')) {
+        feedback.push("⚠️ Consider defining a function to organize your solution.");
+      }
+      if (code.includes('console.log')) {
+        feedback.push("✅ Good use of console.log for debugging/output.");
+        score += 20;
+      }
+      if (code.includes('return')) {
+        feedback.push("✅ Function returns a value - good practice.");
+        score += 30;
+      }
+      break;
+
+    case 'python':
+      if (!code.includes('def ')) {
+        feedback.push("⚠️ Consider defining a function using 'def' keyword.");
+      }
+      if (code.includes('print(')) {
+        feedback.push("✅ Good use of print() for output.");
+        score += 20;
+      }
+      if (code.includes('return')) {
+        feedback.push("✅ Function returns a value - excellent!");
+        score += 30;
+      }
+      break;
+
+    case 'java':
+      if (!code.includes('public') && !code.includes('class')) {
+        feedback.push("⚠️ Java code should typically include class definition.");
+      }
+      if (code.includes('System.out.println')) {
+        feedback.push("✅ Good use of System.out.println for output.");
+        score += 20;
+      }
+      break;
+  }
+
+  // General code quality checks
+  if (code.length > 50) {
+    score += 20; // Substantial code
+    feedback.push("✅ Substantial solution provided.");
+  }
+
+  if (code.includes('if') || code.includes('for') || code.includes('while')) {
+    score += 20; // Logic implementation
+    feedback.push("✅ Good use of control structures.");
+  }
+
+  if (code.includes('//') || code.includes('#') || code.includes('/*')) {
+    score += 10; // Comments
+    feedback.push("✅ Code includes comments - great for readability!");
+  }
+
+  // Provide encouraging feedback
+  if (score === 0) {
+    feedback.push("💡 Try adding some logic, functions, or output statements to improve your solution.");
+  } else if (score < 50) {
+    feedback.push("👍 Good start! Consider adding more functionality or error handling.");
+  } else if (score < 80) {
+    feedback.push("🎉 Well done! Your solution shows good programming practices.");
+  } else {
+    feedback.push("🌟 Excellent solution! Great use of programming concepts and best practices.");
+  }
+
+  return {
+    score: Math.min(score, 100),
+    feedback,
+    hasErrors: score === 0
+  };
 }
