@@ -6,17 +6,20 @@ import './index.css';
 import { AuthProvider } from './contexts/AuthContext';
 import { ToastProvider } from './contexts/ToastContext';
 import { NotificationProvider } from './contexts/NotificationContext';
+import ErrorBoundary from './components/ui/ErrorBoundary';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <BrowserRouter>
-      <ToastProvider>
-        <NotificationProvider>
-          <AuthProvider>
-            <App />
-          </AuthProvider>
-        </NotificationProvider>
-      </ToastProvider>
-    </BrowserRouter>
+    <ErrorBoundary>
+      <BrowserRouter>
+        <ToastProvider>
+          <NotificationProvider>
+            <AuthProvider>
+              <App />
+            </AuthProvider>
+          </NotificationProvider>
+        </ToastProvider>
+      </BrowserRouter>
+    </ErrorBoundary>
   </StrictMode>
 );
