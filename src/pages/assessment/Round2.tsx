@@ -14,6 +14,7 @@ import { validateCodeSubmission, CodeSubmission } from '../../utils/codeValidati
 import { calculateMarksWithValidation } from '../../utils/marksCalculation';
 import { generateConfirmationNumber, sendTestCompletionEmail, TestCompletionData } from '../../utils/emailService';
 import { QuestionCache } from '../../utils/cacheManager';
+import { cn } from '../../utils/cn';
 
 const ROUND_DURATION = 45 * 60; // 45 minutes in seconds
 
